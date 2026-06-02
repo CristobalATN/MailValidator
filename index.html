@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MailVerify — Validador de Emails</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -210,10 +211,10 @@ tbody td{padding:10px 12px;vertical-align:middle;overflow:hidden;text-overflow:e
     <div class="card">
       <div class="card-title">Importar desde CSV / Excel</div>
       <div class="drop" id="drop" ondragover="doDrag(event,true)" ondragleave="doDrag(event,false)" ondrop="doDrop(event)">
-        <input type="file" accept=".csv,.txt" onchange="handleFile(event)">
+        <input type="file" accept=".csv,.txt,.xlsx,.xls" onchange="handleFile(event)">
         <div class="drop-icon">📂</div>
         <div class="drop-txt">Arrastra tu archivo o <strong>haz clic para elegir</strong><br>
-          <span style="font-size:11px">CSV o TXT · formato: email ó nombre,email</span>
+          <span style="font-size:11px">CSV, TXT o Excel (.xlsx) · formato: email ó nombre,email</span>
         </div>
       </div>
       <div class="csv-info" id="csv-info"></div>
@@ -377,23 +378,49 @@ function doDrag(e,on){e.preventDefault();document.getElementById('drop').classLi
 function doDrop(e){e.preventDefault();document.getElementById('drop').classList.remove('drag');processFile(e.dataTransfer.files[0]);}
 function handleFile(e){if(e.target.files[0])processFile(e.target.files[0]);e.target.value='';}
 
+function extractEmails(rows){
+  pendingBatch=[];
+  rows.forEach(row=>{
+    if(!row||row.length===0)return;
+    const cells=row.map(c=>String(c||'').trim());
+    const emailCell=cells.find(c=>c.includes('@'));
+    if(!emailCell)return;
+    const nameCell=cells.find(c=>c&&!c.includes('@')&&c.length>1&&!/^\d+$/.test(c));
+    pendingBatch.push({nombre:nameCell||'—',email:emailCell.toLowerCase()});
+  });
+}
+
 function processFile(file){
-  const reader=new FileReader();
-  reader.onload=e=>{
-    const lines=e.target.result.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
-    pendingBatch=[];
-    lines.forEach(line=>{
-      const parts=line.split(/[,;|\t]/);
-      let nombre='—',email='';
-      if(parts.length>=2){const me=parts.find(p=>p.includes('@'));const mn=parts.find(p=>!p.includes('@'));email=me?me.trim():'';nombre=mn?mn.trim():'—';}
-      else{email=parts[0].trim();}
-      if(email.includes('@'))pendingBatch.push({nombre,email});
-    });
-    const info=document.getElementById('csv-info');
-    info.className='csv-info show';
-    info.innerHTML=`<span style="color:var(--green);font-weight:500">${pendingBatch.length} emails encontrados</span> en <em>${esc(file.name)}</em> &nbsp;<button class="sm" style="margin-left:10px" onclick="runBatch()">Procesar todos</button>`;
-  };
-  reader.readAsText(file);
+  const isXlsx=/\.(xlsx|xls)$/i.test(file.name);
+  if(isXlsx){
+    const reader=new FileReader();
+    reader.onload=e=>{
+      const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+      // Skip header row if first cell doesn't look like an email and contains text
+      const startRow=rows.length>0&&!String(rows[0][0]||'').includes('@')?1:0;
+      extractEmails(rows.slice(startRow));
+      showFileInfo(file.name);
+    };
+    reader.readAsArrayBuffer(file);
+  } else {
+    const reader=new FileReader();
+    reader.onload=e=>{
+      const lines=e.target.result.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+      const rows=lines.map(l=>l.split(/[,;|\t]/));
+      const startRow=rows.length>0&&!rows[0].some(c=>c.includes('@'))?1:0;
+      extractEmails(rows.slice(startRow));
+      showFileInfo(file.name);
+    };
+    reader.readAsText(file);
+  }
+}
+
+function showFileInfo(filename){
+  const info=document.getElementById('csv-info');
+  info.className='csv-info show';
+  info.innerHTML=`<span style="color:var(--green);font-weight:500">${pendingBatch.length} emails encontrados</span> en <em>${esc(filename)}</em> &nbsp;<button class="sm" style="margin-left:10px" onclick="runBatch()">Procesar todos</button>`;
 }
 
 async function runBatch(){
