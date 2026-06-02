@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MailVerify — Validador de Emails</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0a0c;--s1:#111114;--s2:#18181c;--s3:#222227;
+  --b1:rgba(255,255,255,0.05);--b2:rgba(255,255,255,0.1);--b3:rgba(255,255,255,0.16);
+  --green:#4ade80;--green-bg:rgba(74,222,128,0.1);--green-bd:rgba(74,222,128,0.25);
+  --red:#f87171;--red-bg:rgba(248,113,113,0.1);--red-bd:rgba(248,113,113,0.25);
+  --yellow:#fbbf24;--yellow-bg:rgba(251,191,36,0.1);--yellow-bd:rgba(251,191,36,0.25);
+  --text:#e2e2e8;--muted:#52525e;
+  --font-head:'Syne',sans-serif;--font-mono:'DM Mono',monospace;
+  --radius:10px;--radius-lg:14px;
+}
+body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13px;min-height:100vh;line-height:1.5}
+
+/* ── Header ── */
+.hdr{position:sticky;top:0;z-index:100;background:rgba(10,10,12,0.92);backdrop-filter:blur(12px);border-bottom:1px solid var(--b1);padding:14px 24px;display:flex;align-items:center;justify-content:space-between}
+.logo{font-family:var(--font-head);font-size:18px;font-weight:800;letter-spacing:-0.5px;color:var(--text)}
+.logo em{color:var(--green);font-style:normal}
+.live{display:inline-flex;align-items:center;gap:7px;font-size:11px;color:var(--green);background:var(--green-bg);border:1px solid var(--green-bd);padding:5px 12px;border-radius:20px}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}
+
+/* ── Layout ── */
+.container{max-width:820px;margin:0 auto;padding:28px 24px}
+
+/* ── Stats ── */
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:24px}
+.stat{background:var(--s1);border:1px solid var(--b1);border-radius:var(--radius);padding:16px;text-align:center;transition:.2s}
+.stat:hover{border-color:var(--b2)}
+.stat-n{font-family:var(--font-head);font-size:28px;font-weight:800;line-height:1;margin-bottom:4px}
+.stat-l{font-size:10px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted)}
+.stat.ok .stat-n{color:var(--green)}.stat.bad .stat-n{color:var(--red)}.stat.tot .stat-n{color:var(--text)}
+
+/* ── Tabs ── */
+.tabs{display:flex;border-bottom:1px solid var(--b1);margin-bottom:24px}
+.tab{padding:10px 18px;cursor:pointer;color:var(--muted);font-family:var(--font-head);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;border-bottom:2px solid transparent;transition:.15s}
+.tab:hover{color:var(--text)}.tab.active{color:var(--green);border-bottom-color:var(--green)}
+
+.panel{display:none}.panel.active{display:block}
+
+/* ── Cards ── */
+.card{background:var(--s1);border:1px solid var(--b1);border-radius:var(--radius-lg);padding:20px;margin-bottom:16px}
+.card-title{font-family:var(--font-head);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:14px}
+
+/* ── Inputs ── */
+.irow{display:flex;gap:8px;margin-bottom:10px}.irow:last-child{margin-bottom:0}
+input[type=text]{flex:1;background:var(--s2);border:1px solid var(--b2);border-radius:8px;padding:11px 14px;color:var(--text);font-family:var(--font-mono);font-size:13px;outline:none;transition:.15s;width:100%}
+input[type=text]:focus{border-color:var(--green);background:var(--s3)}
+input[type=text]::placeholder{color:var(--muted)}
+button{background:var(--green);color:#0a0a0c;border:none;border-radius:8px;padding:11px 20px;font-family:var(--font-head);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;cursor:pointer;transition:.15s;white-space:nowrap}
+button:hover{opacity:.85}button:active{transform:scale(.97)}
+button:disabled{opacity:.4;cursor:not-allowed}
+button.sec{background:var(--s3);color:var(--text);border:1px solid var(--b2)}
+button.sec:hover{background:var(--s2)}
+button.danger{background:transparent;color:var(--red);border:1px solid var(--red-bd)}
+button.danger:hover{background:var(--red-bg)}
+button.sm{padding:7px 14px;font-size:10px}
+
+/* ── Result card ── */
+.result-box{margin-top:16px;border:1px solid var(--b1);border-radius:var(--radius-lg);overflow:hidden;display:none;animation:fadeIn .3s ease}
+.result-box.show{display:block}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.r-head{padding:14px 18px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--b1);background:var(--s1)}
+.r-email{font-family:var(--font-head);font-size:14px;font-weight:700}
+.badge{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:20px;font-family:var(--font-head);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px}
+.badge.ok{background:var(--green-bg);color:var(--green);border:1px solid var(--green-bd)}
+.badge.fail{background:var(--red-bg);color:var(--red);border:1px solid var(--red-bd)}
+.badge.warn{background:var(--yellow-bg);color:var(--yellow);border:1px solid var(--yellow-bd)}
+.badge.na{background:var(--s3);color:var(--muted);border:1px solid var(--b1)}
+.bdot{width:5px;height:5px;border-radius:50%;background:currentColor}
+.r-body{padding:18px;background:var(--s2)}
+.r-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.r-field{background:var(--s1);border:1px solid var(--b1);border-radius:8px;padding:10px 13px}
+.rf-l{font-size:9px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:4px;font-family:var(--font-head);font-weight:700}
+.rf-v{font-size:12px;font-weight:500}
+.checks{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.chk{background:var(--s1);border:1px solid var(--b1);border-radius:8px;padding:11px 13px;display:flex;align-items:flex-start;gap:10px}
+.chk-icon{width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:10px;font-weight:700;margin-top:1px}
+.chk-icon.ok{background:var(--green-bg);color:var(--green);border:1px solid var(--green-bd)}
+.chk-icon.fail{background:var(--red-bg);color:var(--red);border:1px solid var(--red-bd)}
+.chk-icon.na{background:var(--s3);color:var(--muted);border:1px solid var(--b1)}
+.chk-name{font-family:var(--font-head);font-size:11px;font-weight:700;margin-bottom:2px}
+.chk-name.ok{color:var(--green)}.chk-name.fail{color:var(--red)}.chk-name.na{color:var(--muted)}
+.chk-desc{font-size:11px;color:var(--muted);line-height:1.4}
+.score-wrap{background:var(--s1);border:1px solid var(--b1);border-radius:8px;padding:13px;margin-bottom:14px}
+.score-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.score-lbl{font-family:var(--font-head);font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--muted)}
+.score-num{font-family:var(--font-head);font-size:22px;font-weight:800}
+.score-track{height:4px;background:var(--s3);border-radius:2px;overflow:hidden}
+.score-fill{height:100%;border-radius:2px;transition:width .6s cubic-bezier(.4,0,.2,1)}
+.flags{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.flag{background:var(--s1);border:1px solid var(--b1);border-radius:8px;padding:10px 13px}
+.smtp-err{background:var(--red-bg);border:1px solid var(--red-bd);border-radius:8px;padding:11px 13px;margin-bottom:14px}
+.smtp-err-lbl{font-family:var(--font-head);font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--red);margin-bottom:5px}
+.smtp-err-txt{font-size:11px;color:var(--red);line-height:1.5;opacity:.8}
+
+/* ── Dropzone ── */
+.drop{border:1.5px dashed var(--b2);border-radius:var(--radius);padding:28px;text-align:center;cursor:pointer;transition:.15s;position:relative}
+.drop:hover,.drop.drag{border-color:var(--green);background:rgba(74,222,128,0.04)}
+.drop input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%}
+.drop-icon{font-size:28px;margin-bottom:10px;color:var(--muted)}
+.drop-txt{color:var(--muted);font-size:12px;line-height:1.7}
+.drop-txt strong{color:var(--green)}
+.csv-info{background:var(--s2);border:1px solid var(--b1);border-radius:8px;padding:11px 14px;margin-top:12px;font-size:12px;display:none}
+.csv-info.show{display:block}
+.prog-wrap{display:none;margin-top:12px}.prog-wrap.show{display:block}
+.prog-lbl{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:6px}
+.prog-bar{height:3px;background:var(--s3);border-radius:2px;overflow:hidden}
+.prog-fill{height:100%;background:var(--green);border-radius:2px;transition:width .2s}
+
+/* ── History table ── */
+.filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.fbtn{padding:5px 13px;border-radius:20px;border:1px solid var(--b2);background:transparent;color:var(--muted);font-family:var(--font-mono);font-size:11px;cursor:pointer;transition:.15s}
+.fbtn:hover{border-color:var(--green);color:var(--green)}
+.fbtn.active{background:var(--green-bg);border-color:var(--green-bd);color:var(--green)}
+.srch{flex:1;min-width:140px;background:var(--s2);border:1px solid var(--b1);border-radius:7px;padding:7px 12px;color:var(--text);font-family:var(--font-mono);font-size:12px;outline:none}
+.srch:focus{border-color:var(--green)}
+.srch::placeholder{color:var(--muted)}
+.exp-bar{display:flex;gap:8px;justify-content:flex-end;margin-bottom:14px}
+.tbl-card{background:var(--s1);border:1px solid var(--b1);border-radius:var(--radius-lg);overflow:hidden}
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed}
+thead th{padding:9px 12px;text-align:left;color:var(--muted);font-family:var(--font-head);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--b1);white-space:nowrap}
+tbody tr{border-bottom:1px solid var(--b1);cursor:pointer;transition:.1s}
+tbody tr:hover{background:var(--s2)}
+tbody td{padding:10px 12px;vertical-align:middle;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.td-name{font-family:var(--font-head);font-size:12px;font-weight:700}
+.td-email{color:var(--muted);font-size:11px}
+.mini{width:22px;height:15px;border-radius:3px;display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;font-family:var(--font-head)}
+.mini.ok{background:var(--green-bg);color:var(--green)}
+.mini.fail{background:var(--red-bg);color:var(--red)}
+.mini.na{background:var(--s3);color:var(--muted)}
+.empty{text-align:center;padding:48px;color:var(--muted)}
+.empty-icon{font-size:32px;margin-bottom:12px}
+.del-btn{background:transparent;border:1px solid var(--b1);border-radius:4px;padding:3px 8px;color:var(--muted);font-size:10px;cursor:pointer;transition:.15s}
+.del-btn:hover{border-color:var(--red-bd);color:var(--red)}
+
+/* ── Modal ── */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:200;display:none;align-items:flex-start;justify-content:center;padding:40px 20px;overflow-y:auto}
+.overlay.open{display:flex}
+.modal{background:var(--s1);border:1px solid var(--b2);border-radius:var(--radius-lg);width:100%;max-width:540px}
+.modal-hdr{padding:16px 20px;border-bottom:1px solid var(--b1);display:flex;align-items:center;justify-content:space-between}
+.modal-title{font-family:var(--font-head);font-size:13px;font-weight:700}
+.modal-body{padding:18px}
+
+/* ── Toast ── */
+.toast{position:fixed;bottom:24px;right:24px;background:var(--s2);border:1px solid var(--b2);border-radius:10px;padding:12px 16px;font-size:12px;transform:translateY(60px);opacity:0;transition:.25s;z-index:300;max-width:260px}
+.toast.show{transform:translateY(0);opacity:1}
+.toast.ok{border-color:var(--green-bd);color:var(--green)}
+.toast.err{border-color:var(--red-bd);color:var(--red)}
+
+/* ── Loading spinner ── */
+.spin{display:inline-block;width:12px;height:12px;border:2px solid var(--b2);border-top-color:var(--green);border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--b2);border-radius:2px}
+
+@media(max-width:500px){
+  .r-grid,.checks,.flags{grid-template-columns:1fr}
+  .stats{grid-template-columns:1fr}
+  .hdr{padding:12px 16px}
+  .container{padding:16px}
+}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div class="logo">mail<em>verify</em></div>
+  <div class="live"><span class="dot"></span>Truemail SMTP</div>
+</div>
+
+<div class="container">
+
+  <div class="stats">
+    <div class="stat tot"><div class="stat-n" id="s-tot">0</div><div class="stat-l">Total</div></div>
+    <div class="stat ok"><div class="stat-n" id="s-ok">0</div><div class="stat-l">Válidos</div></div>
+    <div class="stat bad"><div class="stat-n" id="s-bad">0</div><div class="stat-l">Inválidos</div></div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('validar',this)">Validar</div>
+    <div class="tab" onclick="switchTab('historial',this)">Historial</div>
+  </div>
+
+  <!-- VALIDAR -->
+  <div class="panel active" id="panel-validar">
+    <div class="card">
+      <div class="card-title">Validar socio individual</div>
+      <div class="irow"><input type="text" id="in-nombre" placeholder="Nombre del socio (opcional)"></div>
+      <div class="irow">
+        <input type="text" id="in-email" placeholder="email@dominio.com" onkeydown="if(event.key==='Enter')doValidate()">
+        <button onclick="doValidate()" id="btn-val">Analizar</button>
+      </div>
+    </div>
+    <div class="result-box" id="result-box"></div>
+
+    <div style="height:1px;background:var(--b1);margin:20px 0"></div>
+
+    <div class="card">
+      <div class="card-title">Importar desde CSV / Excel</div>
+      <div class="drop" id="drop" ondragover="doDrag(event,true)" ondragleave="doDrag(event,false)" ondrop="doDrop(event)">
+        <input type="file" accept=".csv,.txt" onchange="handleFile(event)">
+        <div class="drop-icon">📂</div>
+        <div class="drop-txt">Arrastra tu archivo o <strong>haz clic para elegir</strong><br>
+          <span style="font-size:11px">CSV o TXT · formato: email ó nombre,email</span>
+        </div>
+      </div>
+      <div class="csv-info" id="csv-info"></div>
+      <div class="prog-wrap" id="prog-wrap">
+        <div class="prog-lbl"><span id="prog-txt">Procesando...</span><span id="prog-pct">0%</span></div>
+        <div class="prog-bar"><div class="prog-fill" id="prog-fill"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- HISTORIAL -->
+  <div class="panel" id="panel-historial">
+    <div class="filters">
+      <input class="srch" type="text" placeholder="Buscar nombre o email..." oninput="renderTable()">
+      <button class="fbtn active" onclick="setFilter('all',this)">Todos</button>
+      <button class="fbtn" onclick="setFilter('true',this)">Válidos</button>
+      <button class="fbtn" onclick="setFilter('false',this)">Inválidos</button>
+    </div>
+    <div class="exp-bar">
+      <button class="sec sm" onclick="exportCSV()">⬇ Exportar CSV</button>
+      <button class="danger sm" onclick="clearAll()">Limpiar todo</button>
+    </div>
+    <div class="tbl-card">
+      <div class="tbl-wrap">
+        <table>
+          <colgroup>
+            <col style="width:18%"><col style="width:25%"><col style="width:14%">
+            <col style="width:7%"><col style="width:7%"><col style="width:7%">
+            <col style="width:9%"><col style="width:9%"><col style="width:4%">
+          </colgroup>
+          <thead><tr>
+            <th>Nombre</th><th>Email</th><th>Estado</th>
+            <th>FMT</th><th>MX</th><th>SMTP</th>
+            <th>Score</th><th>Fecha</th><th></th>
+          </tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+        <div class="empty" id="empty">
+          <div class="empty-icon">📭</div>
+          <div style="font-family:var(--font-head);font-size:13px;font-weight:700">Sin registros aún</div>
+          <div style="font-size:11px;margin-top:6px">Valida emails en la pestaña Validar</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Modal -->
+<div class="overlay" id="overlay" onclick="maybeClose(event)">
+  <div class="modal" id="modal">
+    <div class="modal-hdr">
+      <span class="modal-title" id="modal-title">Detalle</span>
+      <button class="sec sm" onclick="closeModal()">Cerrar</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const SERVER='https://mailverify.srv1332701.hstgr.cloud';
+const TOKEN='MiToken2024';
+const KEY='mailverify_v3';
+
+let records=(()=>{try{return JSON.parse(localStorage.getItem(KEY))||[];}catch{return[];}})();
+let activeFilter='all';
+let pendingBatch=[];
+function save(){try{localStorage.setItem(KEY,JSON.stringify(records));}catch{}}
+
+async function callTruemail(email){
+  const res=await fetch(`${SERVER}?email=${encodeURIComponent(email)}`,{headers:{'Authorization':TOKEN}});
+  if(!res.ok)throw new Error('HTTP '+res.status);
+  return res.json();
+}
+
+function parseResult(data,nombre){
+  const ts=new Date();
+  const smtpDebug=data.smtp_debug?.[0]||null;
+  const smtpErr=smtpDebug?.errors?.rcptto||smtpDebug?.errors?.mailfrom||null;
+  const portOpen=smtpDebug?.port_opened??null;
+  let fmtOk=true,mxOk=true,smtpOk=data.success;
+  if(data.errors?.regex)fmtOk=false;
+  if(data.errors?.mx)mxOk=false;
+  let score=0;
+  if(fmtOk)score+=0.25;if(mxOk)score+=0.30;if(smtpOk)score+=0.45;
+  score=Math.round(score*100)/100;
+  const atIdx=data.email.lastIndexOf('@');
+  const user=atIdx>-1?data.email.slice(0,atIdx):data.email;
+  const domain=atIdx>-1?data.email.slice(atIdx+1):'';
+  const tagIdx=user.indexOf('+');
+  const tag=tagIdx>-1?user.slice(tagIdx+1):null;
+  const FREE=['gmail.com','yahoo.com','hotmail.com','outlook.com','live.com','icloud.com'];
+  const DISP=['mailinator.com','guerrillamail.com','yopmail.com','tempmail.com','throwam.com'];
+  const ROLE=['admin','webmaster','postmaster','noreply','no-reply','support','info','contact','sales','abuse','root'];
+  return{id:Date.now()+Math.random(),nombre:nombre||'—',email:data.email,success:data.success,state:data.success?'Deliverable':'Undeliverable',reason:data.success?'Buzón válido':(smtpErr?smtpErr.replace(/\n/g,' ').slice(0,80):JSON.stringify(data.errors||{})),domain,user,tag,fmtOk,mxOk,smtpOk,portOpen,smtpErr,validationType:data.validation_type,isFree:FREE.includes(domain),isDisp:DISP.some(d=>domain.includes(d)),isRole:ROLE.some(p=>user.toLowerCase().startsWith(p)),score,timestamp:ts.toLocaleDateString('es-CL')+' '+ts.toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'})};
+}
+
+async function doValidate(){
+  const emailEl=document.getElementById('in-email');
+  const nameEl=document.getElementById('in-nombre');
+  const email=emailEl.value.trim();
+  const nombre=nameEl.value.trim();
+  if(!email){showToast('Ingresa un email','err');return;}
+  const btn=document.getElementById('btn-val');
+  btn.disabled=true;btn.innerHTML='<span class="spin"></span>Verificando...';
+  const box=document.getElementById('result-box');
+  box.className='result-box show';
+  box.innerHTML='<div style="padding:18px;color:var(--muted);font-size:12px;display:flex;align-items:center;gap:8px"><span class="spin"></span>Consultando servidor Truemail...</div>';
+  try{
+    const data=await callTruemail(email);
+    const r=parseResult(data,nombre);
+    addRecord(r);box.innerHTML=buildCard(r);updateStats();
+    emailEl.value='';nameEl.value='';
+    showToast('Validación completada','ok');
+  }catch(e){
+    box.innerHTML=`<div style="padding:18px;color:var(--red);font-size:12px"><strong>Error al conectar con el servidor</strong><br><span style="opacity:.7">${e.message}</span></div>`;
+    showToast('Error de conexión','err');
+  }
+  btn.disabled=false;btn.textContent='Analizar';
+}
+
+function buildCard(r){
+  const sc=r.score>=0.8?'var(--green)':r.score>=0.5?'var(--yellow)':'var(--red)';
+  const sfill=r.score>=0.8?'var(--green)':r.score>=0.5?'var(--yellow)':'var(--red)';
+  const ci=(ok,na)=>`<div class="chk-icon ${na?'na':ok?'ok':'fail'}">${na?'—':ok?'✓':'✗'}</div>`;
+  const cls=(ok,na)=>na?'na':ok?'ok':'fail';
+  const naMx=!r.fmtOk,naSmtp=!r.fmtOk||!r.mxOk;
+  const smtpErrHtml=r.smtpErr?`<div class="smtp-err"><div class="smtp-err-lbl">Respuesta SMTP del servidor</div><div class="smtp-err-txt">${esc(r.smtpErr)}</div></div>`:'';
+  return`<div class="r-head"><span class="r-email">${esc(r.email)}</span><span class="badge ${r.success?'ok':'fail'}"><span class="bdot"></span>${r.state}</span></div>
+  <div class="r-body">
+    <div class="r-grid">
+      <div class="r-field"><div class="rf-l">Domain</div><div class="rf-v">${esc(r.domain)}</div></div>
+      <div class="r-field"><div class="rf-l">User</div><div class="rf-v">${esc(r.user)}</div></div>
+      <div class="r-field"><div class="rf-l">Tag (+ addressing)</div><div class="rf-v">${r.tag?esc(r.tag):'<span style="color:var(--muted)">—</span>'}</div></div>
+      <div class="r-field"><div class="rf-l">Tipo validación</div><div class="rf-v">${esc(r.validationType||'—')}</div></div>
+      <div class="r-field"><div class="rf-l">Puerto 25</div><div class="rf-v">${r.portOpen===null?'—':r.portOpen?'<span style="color:var(--green)">Abierto</span>':'<span style="color:var(--red)">Bloqueado</span>'}</div></div>
+      <div class="r-field"><div class="rf-l">Razón</div><div class="rf-v" style="font-size:11px;word-break:break-word">${esc((r.reason||'').slice(0,60))}</div></div>
+    </div>
+    ${smtpErrHtml}
+    <div class="checks">
+      <div class="chk">${ci(r.fmtOk,false)}<div><div class="chk-name ${cls(r.fmtOk,false)}">Format valid</div><div class="chk-desc">${r.fmtOk?'Formato RFC válido':'Formato inválido'}</div></div></div>
+      <div class="chk">${ci(r.mxOk,naMx)}<div><div class="chk-name ${cls(r.mxOk,naMx)}">MX valid</div><div class="chk-desc">${naMx?'No aplica':r.mxOk?'Registros MX encontrados':'Sin registros MX'}</div></div></div>
+      <div class="chk">${ci(r.smtpOk,naSmtp)}<div><div class="chk-name ${cls(r.smtpOk,naSmtp)}">SMTP valid</div><div class="chk-desc">${naSmtp?'No aplica':r.smtpOk?'Buzón puede recibir correo':'Buzón rechazado'}</div></div></div>
+      <div class="chk"><div class="chk-icon na">—</div><div><div class="chk-name na">Catch-all</div><div class="chk-desc">No verificado vía SMTP</div></div></div>
+    </div>
+    <div class="score-wrap">
+      <div class="score-top"><span class="score-lbl">Deliverability score</span><span class="score-num" style="color:${sc}">${r.score.toFixed(2)}</span></div>
+      <div class="score-track"><div class="score-fill" style="width:${Math.round(r.score*100)}%;background:${sfill}"></div></div>
+    </div>
+    <div class="flags">
+      <div class="flag"><div class="rf-l">Role email</div><span class="badge ${r.isRole?'warn':'na'}" style="margin-top:6px;display:inline-flex">${r.isRole?'Yes':'No'}</span></div>
+      <div class="flag"><div class="rf-l">Free provider</div><span class="badge ${r.isFree?'warn':'na'}" style="margin-top:6px;display:inline-flex">${r.isFree?'Yes':'No'}</span></div>
+      <div class="flag"><div class="rf-l">Disposable</div><span class="badge ${r.isDisp?'fail':'na'}" style="margin-top:6px;display:inline-flex">${r.isDisp?'Yes':'No'}</span></div>
+    </div>
+  </div>`;
+}
+
+function doDrag(e,on){e.preventDefault();document.getElementById('drop').classList.toggle('drag',on);}
+function doDrop(e){e.preventDefault();document.getElementById('drop').classList.remove('drag');processFile(e.dataTransfer.files[0]);}
+function handleFile(e){if(e.target.files[0])processFile(e.target.files[0]);e.target.value='';}
+
+function processFile(file){
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const lines=e.target.result.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+    pendingBatch=[];
+    lines.forEach(line=>{
+      const parts=line.split(/[,;|\t]/);
+      let nombre='—',email='';
+      if(parts.length>=2){const me=parts.find(p=>p.includes('@'));const mn=parts.find(p=>!p.includes('@'));email=me?me.trim():'';nombre=mn?mn.trim():'—';}
+      else{email=parts[0].trim();}
+      if(email.includes('@'))pendingBatch.push({nombre,email});
+    });
+    const info=document.getElementById('csv-info');
+    info.className='csv-info show';
+    info.innerHTML=`<span style="color:var(--green);font-weight:500">${pendingBatch.length} emails encontrados</span> en <em>${esc(file.name)}</em> &nbsp;<button class="sm" style="margin-left:10px" onclick="runBatch()">Procesar todos</button>`;
+  };
+  reader.readAsText(file);
+}
+
+async function runBatch(){
+  if(!pendingBatch.length)return;
+  const emails=[...pendingBatch];
+  const pw=document.getElementById('prog-wrap'),fill=document.getElementById('prog-fill'),txt=document.getElementById('prog-txt'),pct=document.getElementById('prog-pct');
+  pw.className='prog-wrap show';document.getElementById('csv-info').className='csv-info';
+  let i=0;
+  async function next(){
+    if(i>=emails.length){txt.textContent=`✓ ${emails.length} emails procesados`;pct.textContent='100%';fill.style.width='100%';updateStats();showToast(`${emails.length} emails importados`,'ok');setTimeout(()=>{pw.className='prog-wrap';},3000);return;}
+    const{nombre,email}=emails[i];
+    try{const data=await callTruemail(email);addRecord(parseResult(data,nombre));}
+    catch{addRecord({id:Date.now()+Math.random(),nombre,email,success:false,state:'Error',reason:'Sin conexión al servidor',domain:'',user:'',tag:null,fmtOk:false,mxOk:false,smtpOk:false,portOpen:null,smtpErr:null,validationType:'error',isFree:false,isDisp:false,isRole:false,score:0,timestamp:new Date().toLocaleDateString('es-CL')});}
+    i++;
+    const p=Math.round(i/emails.length*100);
+    fill.style.width=p+'%';pct.textContent=p+'%';txt.textContent=`Procesando ${i}/${emails.length}...`;
+    setTimeout(next,400);
+  }
+  next();
+}
+
+function addRecord(r){records.unshift(r);save();if(document.getElementById('panel-historial').classList.contains('active'))renderTable();}
+function deleteRecord(id){records=records.filter(r=>r.id!==id);save();renderTable();updateStats();}
+function clearAll(){if(!confirm('¿Borrar todo el historial?'))return;records=[];save();renderTable();updateStats();}
+
+function renderTable(){
+  const tbody=document.getElementById('tbody'),empty=document.getElementById('empty');
+  const q=document.querySelector('.srch').value.toLowerCase();
+  const filtered=records.filter(r=>{const fok=activeFilter==='all'||String(r.success)===activeFilter;const sok=!q||r.email.includes(q)||(r.nombre||'').toLowerCase().includes(q);return fok&&sok;});
+  if(!filtered.length){tbody.innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+  const sc=r=>r.score>=0.8?'var(--green)':r.score>=0.5?'var(--yellow)':'var(--red)';
+  tbody.innerHTML=filtered.map(r=>`<tr onclick="openDetail(${r.id})">
+    <td class="td-name">${esc(r.nombre)}</td>
+    <td class="td-email">${esc(r.email)}</td>
+    <td><span class="badge ${r.success?'ok':'fail'}" style="font-size:10px;padding:3px 9px"><span class="bdot"></span>${r.state}</span></td>
+    <td><span class="mini ${r.fmtOk?'ok':'fail'}">${r.fmtOk?'✓':'✗'}</span></td>
+    <td><span class="mini ${r.mxOk?'ok':'fail'}">${r.mxOk?'✓':'✗'}</span></td>
+    <td><span class="mini ${r.smtpOk?'ok':r.fmtOk&&r.mxOk?'fail':'na'}">${r.smtpOk?'✓':r.fmtOk&&r.mxOk?'✗':'—'}</span></td>
+    <td style="color:${sc(r)};font-family:var(--font-head);font-weight:700">${r.score.toFixed(2)}</td>
+    <td style="color:var(--muted);font-size:11px">${esc(r.timestamp)}</td>
+    <td onclick="event.stopPropagation()"><button class="del-btn" onclick="deleteRecord(${r.id})">✕</button></td>
+  </tr>`).join('');
+}
+
+function openDetail(id){const r=records.find(x=>x.id===id);if(!r)return;document.getElementById('modal-title').textContent=r.email;document.getElementById('modal-body').innerHTML=buildCard(r);document.getElementById('overlay').className='overlay open';}
+function closeModal(){document.getElementById('overlay').className='overlay';}
+function maybeClose(e){if(e.target===document.getElementById('overlay'))closeModal();}
+
+function exportCSV(){
+  if(!records.length){showToast('Sin datos para exportar','err');return;}
+  const hdr='Nombre,Email,Estado,Razon,Domain,User,Tag,Format,MX,SMTP,Puerto25,Score,FreeProvider,Disposable,RoleEmail,Fecha\n';
+  const rows=records.map(r=>`"${r.nombre}","${r.email}","${r.state}","${(r.reason||'').replace(/"/g,"'")}","${r.domain}","${r.user}","${r.tag||''}","${r.fmtOk}","${r.mxOk}","${r.smtpOk}","${r.portOpen}","${r.score}","${r.isFree}","${r.isDisp}","${r.isRole}","${r.timestamp}"`).join('\n');
+  const blob=new Blob(['\uFEFF'+hdr+rows],{type:'text/csv;charset=utf-8'});
+  const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(blob),download:'socios_verificados.csv'});
+  a.click();URL.revokeObjectURL(a.href);
+  showToast('CSV exportado','ok');
+}
+
+function switchTab(name,el){document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.getElementById('panel-'+name).classList.add('active');el.classList.add('active');if(name==='historial')renderTable();}
+function setFilter(f,btn){activeFilter=f;document.querySelectorAll('.fbtn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');renderTable();}
+function updateStats(){document.getElementById('s-tot').textContent=records.length;document.getElementById('s-ok').textContent=records.filter(r=>r.success).length;document.getElementById('s-bad').textContent=records.filter(r=>!r.success).length;}
+let toastT;
+function showToast(msg,type=''){const t=document.getElementById('toast');t.textContent=msg;t.className='toast show '+type;clearTimeout(toastT);toastT=setTimeout(()=>{t.className='toast';},2500);}
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+updateStats();
+</script>
+</body>
+</html>
