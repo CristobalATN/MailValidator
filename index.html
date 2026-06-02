@@ -230,8 +230,9 @@ tbody td{padding:10px 12px;vertical-align:middle;overflow:hidden;text-overflow:e
     <div class="filters">
       <input class="srch" type="text" placeholder="Buscar nombre o email..." oninput="renderTable()">
       <button class="fbtn active" onclick="setFilter('all',this)">Todos</button>
-      <button class="fbtn" onclick="setFilter('true',this)">Válidos</button>
-      <button class="fbtn" onclick="setFilter('false',this)">Inválidos</button>
+      <button class="fbtn" onclick="setFilter('deliverable',this)">Válidos</button>
+      <button class="fbtn" onclick="setFilter('risky',this)">Risky</button>
+      <button class="fbtn" onclick="setFilter('undeliverable',this)">Inválidos</button>
     </div>
     <div class="exp-bar">
       <button class="sec sm" onclick="exportCSV()">⬇ Exportar CSV</button>
@@ -284,6 +285,7 @@ const KEY='mailverify_v3';
 let records=(()=>{try{return JSON.parse(localStorage.getItem(KEY))||[];}catch{return[];}})();
 let activeFilter='all';
 let pendingBatch=[];
+let batchStopped=false;
 function save(){try{localStorage.setItem(KEY,JSON.stringify(records));}catch{}}
 
 async function callTruemail(email){
@@ -300,8 +302,19 @@ function parseResult(data,nombre){
   let fmtOk=true,mxOk=true,smtpOk=data.success;
   if(data.errors?.regex)fmtOk=false;
   if(data.errors?.mx)mxOk=false;
+  // smtp error genérico = servidor no respondió claramente → Risky, no Undeliverable
+  const isSmtpGenericError=!data.success&&data.errors?.smtp==='smtp error'&&!smtpErr;
+  // rcptto 550 = buzón confirmado como inexistente → Undeliverable real
+  const isHardBounce=smtpErr&&/550|551|552|553|554|user.*not.*exist|does.*not.*exist|no.*such.*user|invalid.*mailbox/i.test(smtpErr);
+  let state,stateClass,reason;
+  if(data.success){state='Deliverable';stateClass='ok';reason='Buzón válido';}
+  else if(isSmtpGenericError){state='Risky';stateClass='warn';reason='Servidor no respondió — posible greylisting o timeout';}
+  else if(isHardBounce){state='Undeliverable';stateClass='fail';reason=smtpErr.replace(/\n/g,' ').slice(0,80);}
+  else{state='Undeliverable';stateClass='fail';reason=smtpErr?smtpErr.replace(/\n/g,' ').slice(0,80):JSON.stringify(data.errors||{});}
   let score=0;
-  if(fmtOk)score+=0.25;if(mxOk)score+=0.30;if(smtpOk)score+=0.45;
+  if(fmtOk)score+=0.25;if(mxOk)score+=0.30;
+  if(data.success)score+=0.45;
+  else if(isSmtpGenericError)score+=0.20; // risky: parcial
   score=Math.round(score*100)/100;
   const atIdx=data.email.lastIndexOf('@');
   const user=atIdx>-1?data.email.slice(0,atIdx):data.email;
@@ -311,7 +324,7 @@ function parseResult(data,nombre){
   const FREE=['gmail.com','yahoo.com','hotmail.com','outlook.com','live.com','icloud.com'];
   const DISP=['mailinator.com','guerrillamail.com','yopmail.com','tempmail.com','throwam.com'];
   const ROLE=['admin','webmaster','postmaster','noreply','no-reply','support','info','contact','sales','abuse','root'];
-  return{id:Date.now()+Math.random(),nombre:nombre||'—',email:data.email,success:data.success,state:data.success?'Deliverable':'Undeliverable',reason:data.success?'Buzón válido':(smtpErr?smtpErr.replace(/\n/g,' ').slice(0,80):JSON.stringify(data.errors||{})),domain,user,tag,fmtOk,mxOk,smtpOk,portOpen,smtpErr,validationType:data.validation_type,isFree:FREE.includes(domain),isDisp:DISP.some(d=>domain.includes(d)),isRole:ROLE.some(p=>user.toLowerCase().startsWith(p)),score,timestamp:ts.toLocaleDateString('es-CL')+' '+ts.toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'})};
+  return{id:Date.now()+Math.random(),nombre:nombre||'—',email:data.email,success:data.success,state,stateClass,reason,domain,user,tag,fmtOk,mxOk,smtpOk,portOpen,smtpErr,validationType:data.validation_type,isFree:FREE.includes(domain),isDisp:DISP.some(d=>domain.includes(d)),isRole:ROLE.some(p=>user.toLowerCase().startsWith(p)),score,timestamp:ts.toLocaleDateString('es-CL')+' '+ts.toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'})};
 }
 
 async function doValidate(){
@@ -345,7 +358,7 @@ function buildCard(r){
   const cls=(ok,na)=>na?'na':ok?'ok':'fail';
   const naMx=!r.fmtOk,naSmtp=!r.fmtOk||!r.mxOk;
   const smtpErrHtml=r.smtpErr?`<div class="smtp-err"><div class="smtp-err-lbl">Respuesta SMTP del servidor</div><div class="smtp-err-txt">${esc(r.smtpErr)}</div></div>`:'';
-  return`<div class="r-head"><span class="r-email">${esc(r.email)}</span><span class="badge ${r.success?'ok':'fail'}"><span class="bdot"></span>${r.state}</span></div>
+  return`<div class="r-head"><span class="r-email">${esc(r.email)}</span><span class="badge ${r.stateClass||'fail'}"><span class="bdot"></span>${r.state}</span></div>
   <div class="r-body">
     <div class="r-grid">
       <div class="r-field"><div class="rf-l">Domain</div><div class="rf-v">${esc(r.domain)}</div></div>
@@ -425,22 +438,39 @@ function showFileInfo(filename){
 
 async function runBatch(){
   if(!pendingBatch.length)return;
+  batchStopped=false;
   const emails=[...pendingBatch];
   const pw=document.getElementById('prog-wrap'),fill=document.getElementById('prog-fill'),txt=document.getElementById('prog-txt'),pct=document.getElementById('prog-pct');
   pw.className='prog-wrap show';document.getElementById('csv-info').className='csv-info';
+  // Show stop button
+  pct.innerHTML=`<button class="sm danger" style="padding:3px 10px;font-size:10px" onclick="stopBatch()">⏹ Parar</button>`;
   let i=0;
   async function next(){
-    if(i>=emails.length){txt.textContent=`✓ ${emails.length} emails procesados`;pct.textContent='100%';fill.style.width='100%';updateStats();showToast(`${emails.length} emails importados`,'ok');setTimeout(()=>{pw.className='prog-wrap';},3000);return;}
+    if(batchStopped){
+      txt.textContent=`⏹ Detenido en ${i}/${emails.length}`;
+      pct.textContent=`${Math.round(i/emails.length*100)}%`;
+      updateStats();showToast(`Proceso detenido — ${i} procesados`,'err');
+      setTimeout(()=>{pw.className='prog-wrap';},3000);return;
+    }
+    if(i>=emails.length){
+      txt.textContent=`✓ ${emails.length} emails procesados`;
+      pct.textContent='100%';fill.style.width='100%';
+      updateStats();showToast(`${emails.length} emails importados`,'ok');
+      setTimeout(()=>{pw.className='prog-wrap';},3000);return;
+    }
     const{nombre,email}=emails[i];
     try{const data=await callTruemail(email);addRecord(parseResult(data,nombre));}
-    catch{addRecord({id:Date.now()+Math.random(),nombre,email,success:false,state:'Error',reason:'Sin conexión al servidor',domain:'',user:'',tag:null,fmtOk:false,mxOk:false,smtpOk:false,portOpen:null,smtpErr:null,validationType:'error',isFree:false,isDisp:false,isRole:false,score:0,timestamp:new Date().toLocaleDateString('es-CL')});}
+    catch{addRecord({id:Date.now()+Math.random(),nombre,email,success:false,state:'Error',stateClass:'fail',reason:'Sin conexión al servidor',domain:'',user:'',tag:null,fmtOk:false,mxOk:false,smtpOk:false,portOpen:null,smtpErr:null,validationType:'error',isFree:false,isDisp:false,isRole:false,score:0,timestamp:new Date().toLocaleDateString('es-CL')});}
     i++;
     const p=Math.round(i/emails.length*100);
-    fill.style.width=p+'%';pct.textContent=p+'%';txt.textContent=`Procesando ${i}/${emails.length}...`;
+    fill.style.width=p+'%';
+    txt.textContent=`Procesando ${i}/${emails.length}...`;
     setTimeout(next,400);
   }
   next();
 }
+
+function stopBatch(){batchStopped=true;}
 
 function addRecord(r){records.unshift(r);save();if(document.getElementById('panel-historial').classList.contains('active'))renderTable();}
 function deleteRecord(id){records=records.filter(r=>r.id!==id);save();renderTable();updateStats();}
@@ -449,14 +479,16 @@ function clearAll(){if(!confirm('¿Borrar todo el historial?'))return;records=[]
 function renderTable(){
   const tbody=document.getElementById('tbody'),empty=document.getElementById('empty');
   const q=document.querySelector('.srch').value.toLowerCase();
-  const filtered=records.filter(r=>{const fok=activeFilter==='all'||String(r.success)===activeFilter;const sok=!q||r.email.includes(q)||(r.nombre||'').toLowerCase().includes(q);return fok&&sok;});
+  const filtered=records.filter(r=>{
+    const fok=activeFilter==='all'||(activeFilter==='deliverable'&&r.state==='Deliverable')||(activeFilter==='risky'&&r.state==='Risky')||(activeFilter==='undeliverable'&&(r.state==='Undeliverable'||r.state==='Error'));
+    const sok=!q||r.email.includes(q)||(r.nombre||'').toLowerCase().includes(q);return fok&&sok;});
   if(!filtered.length){tbody.innerHTML='';empty.style.display='block';return;}
   empty.style.display='none';
   const sc=r=>r.score>=0.8?'var(--green)':r.score>=0.5?'var(--yellow)':'var(--red)';
   tbody.innerHTML=filtered.map(r=>`<tr onclick="openDetail(${r.id})">
     <td class="td-name">${esc(r.nombre)}</td>
     <td class="td-email">${esc(r.email)}</td>
-    <td><span class="badge ${r.success?'ok':'fail'}" style="font-size:10px;padding:3px 9px"><span class="bdot"></span>${r.state}</span></td>
+    <td><span class="badge ${r.stateClass||'fail'}" style="font-size:10px;padding:3px 9px"><span class="bdot"></span>${r.state}</span></td>
     <td><span class="mini ${r.fmtOk?'ok':'fail'}">${r.fmtOk?'✓':'✗'}</span></td>
     <td><span class="mini ${r.mxOk?'ok':'fail'}">${r.mxOk?'✓':'✗'}</span></td>
     <td><span class="mini ${r.smtpOk?'ok':r.fmtOk&&r.mxOk?'fail':'na'}">${r.smtpOk?'✓':r.fmtOk&&r.mxOk?'✗':'—'}</span></td>
@@ -482,7 +514,7 @@ function exportCSV(){
 
 function switchTab(name,el){document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.getElementById('panel-'+name).classList.add('active');el.classList.add('active');if(name==='historial')renderTable();}
 function setFilter(f,btn){activeFilter=f;document.querySelectorAll('.fbtn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');renderTable();}
-function updateStats(){document.getElementById('s-tot').textContent=records.length;document.getElementById('s-ok').textContent=records.filter(r=>r.success).length;document.getElementById('s-bad').textContent=records.filter(r=>!r.success).length;}
+function updateStats(){document.getElementById('s-tot').textContent=records.length;document.getElementById('s-ok').textContent=records.filter(r=>r.state==='Deliverable').length;document.getElementById('s-bad').textContent=records.filter(r=>r.state==='Undeliverable'||r.state==='Error').length;}
 let toastT;
 function showToast(msg,type=''){const t=document.getElementById('toast');t.textContent=msg;t.className='toast show '+type;clearTimeout(toastT);toastT=setTimeout(()=>{t.className='toast';},2500);}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
