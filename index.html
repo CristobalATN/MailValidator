@@ -465,7 +465,7 @@ async function runBatch(){
     const p=Math.round(i/emails.length*100);
     fill.style.width=p+'%';
     txt.textContent=`Procesando ${i}/${emails.length}...`;
-    setTimeout(next,400);
+    setTimeout(next,5000);
   }
   next();
 }
